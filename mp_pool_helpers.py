@@ -14,6 +14,28 @@ def filter_tags(tags,Key):
             return tag['Value']
     return None
 
+def get_asgs_by_tag(tags):
+    #taglist = [{'Name':'sample'}]
+    asg_list = []
+    try:
+        client = boto3.client('autoscaling')
+        paginator = client.get_paginator('describe_auto_scaling_groups')
+        page_iterator = paginator.paginate(
+            PaginationConfig={'PageSize': 100}
+        )
+        filter = 'AutoScalingGroups[]'
+        for tag in tags:
+            filter = ('{} | [?contains(Tags[?Key==`{}`].Value, `{}`)]'.format(filter, tag, tags[tag]))
+        filtered_asgs = page_iterator.search(filter)
+        for asg in filtered_asgs:
+            asg_list.append(asg['AutoScalingGroupName'])
+        return {'Status': True,'asg_list':asg_list}
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return {'Status': False}
+    else:
+        return {'Status': False}
+
 def pip_dependecies(python_bin,target,requirements):
     print('Resolving Lambda Dependencies..')
     try:
@@ -38,8 +60,41 @@ def build_zip(filename, target_dir):
             zipobj.write(fn, fn[rootlen:])
     print('Finished Zipping Contents of folder ==>{}'.format(target_dir)) 
 
+def create_cloudwatch_event_rule(EventName,ScheduleExpression):
+    try:
+        client = boto3.client('events')
+        response = client.put_rule(
+            Name=EventName,
+            ScheduleExpression=ScheduleExpression,
+            State='ENABLED',
+            Description=EventName,
+            #RoleArn=RoleArn
+            )            
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return True
+    else:
+        return False
+
+def create_cloudwatch_event_target(RuleName,Id,Arn):
+    try:
+        client = boto3.client('events')
+        response = client.put_targets(
+            Rule=RuleName,
+            Targets=[{
+                    'Id': Id,
+                    'Arn': Arn}])  
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return True
+    else:
+        return False
+
 def update_lambda_function(FunctionName,ZipFile):
-    instance_list = []
     try:
         client = boto3.client('lambda')
         response = client.update_function_code(
@@ -55,7 +110,6 @@ def update_lambda_function(FunctionName,ZipFile):
         return False
 
 def create_lambda_function(FunctionName,Role,Handler,ZipFile,Timeout,Environment):
-    instance_list = []
     try:
         client = boto3.client('lambda')
         response = client.create_function(
@@ -66,25 +120,24 @@ def create_lambda_function(FunctionName,Role,Handler,ZipFile,Timeout,Environment
             Code={
                 'ZipFile': open(ZipFile,'rb').read()
             },
-            Timeout=900,
+            Timeout=Timeout,
             Environment={
                 'Variables': Environment
-            })          
+            })      
     except ClientError as e:
         print("Unexpected error: {}".format(e))
-        return False
+        return {'Status': False}
     if response['ResponseMetadata']['HTTPStatusCode'] == 201:
-        return True
+        return {'Status': True,'FunctionArn':response['Configuration']['FunctionArn']}
     else:
-        return False
+        return {'Status': False}
 
 def get_lambda_function(FunctionName):
-    instance_list = []
     try:
         client = boto3.client('lambda')
         response = client.get_function(
             FunctionName=FunctionName
-            )            
+            )         
     except ClientError as e:
         print("Unexpected error: {}".format(e))
         return {'Status': False}
@@ -141,7 +194,8 @@ def get_asg_details(AutoScalingGroupName):
         return {'Status': False}
     if response['ResponseMetadata']['HTTPStatusCode'] == 200:
         parsed = {
-        'LaunchConfigurationName' : response['AutoScalingGroups'][0]['LaunchConfigurationName']
+        'LaunchConfigurationName' : response['AutoScalingGroups'][0]['LaunchConfigurationName'],
+        'Tags' : response['AutoScalingGroups'][0]['Tags']
         }
         return {'Status': True,'AutoScalingGroups':parsed}
     else:
