@@ -14,6 +14,67 @@ def filter_tags(tags,Key):
             return tag['Value']
     return None
 
+def create_policy_version(PolicyArn,PolicyDocument):
+    try:
+        client = boto3.client('iam')
+        response = client.create_policy_version(
+            PolicyArn=PolicyArn,
+            PolicyDocument=PolicyDocument,
+            SetAsDefault=True
+        )
+        print(response)          
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return True
+    else:
+        return False
+
+def get_policy_document(PolicyArn,VersionId):
+    try:
+        client = boto3.client('iam')
+        response = client.get_policy_version(
+            PolicyArn=PolicyArn,
+            VersionId=VersionId
+        )          
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return {'Status': False}
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {'Status': True ,'Document': response['PolicyVersion']['Document']}
+    else:
+        return {'Status': False}
+
+def get_policy(PolicyArn):
+    try:
+        client = boto3.client('iam')
+        response = client.get_policy(
+            PolicyArn=PolicyArn
+        )          
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return {'Status': False}
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {'Status': True ,'Policy': response['Policy']}
+    else:
+        return {'Status': False}
+
+
+def list_attached_role_policies(RoleName):
+    try:
+        client = boto3.client('iam')
+        response = client.list_attached_role_policies(
+            RoleName=RoleName
+        )          
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return {'Status': False}
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {'Status': True ,'AttachedPolicies': response['AttachedPolicies']}
+    else:
+        return {'Status': False}
+
 def get_asgs_by_tag(tags):
     #taglist = [{'Name':'sample'}]
     asg_list = []
@@ -37,13 +98,13 @@ def get_asgs_by_tag(tags):
         return {'Status': False}
 
 def pip_dependecies(python_bin,target,requirements):
-    print('Resolving Lambda Dependencies..')
+    print('\nResolving Lambda Dependencies..')
     try:
         subprocess.check_output([python_bin,'-m','pip','install','--target',target,'-r', requirements ])
     except FileNotFoundError:
         print('{} not found . Try using python3 or python3.<version>'.format(python_bin))
         sys.exit(1)
-    print('Resolved Lambda Dependencies..')
+    print('Resolved Lambda Dependencies...\n')
     
 def read_file_b64(filename):
     with open(filename, "rb") as f:
@@ -69,14 +130,14 @@ def create_cloudwatch_event_rule(EventName,ScheduleExpression):
             State='ENABLED',
             Description=EventName,
             #RoleArn=RoleArn
-            )            
+            )           
     except ClientError as e:
         print("Unexpected error: {}".format(e))
-        return False
+        return {'Status': False}
     if response['ResponseMetadata']['HTTPStatusCode'] == 200:
-        return True
+        return {'Status': True,'RuleArn':response['RuleArn']}
     else:
-        return False
+        return {'Status': False}
 
 def create_cloudwatch_event_target(RuleName,Id,Arn):
     try:
@@ -89,6 +150,28 @@ def create_cloudwatch_event_target(RuleName,Id,Arn):
     except ClientError as e:
         print("Unexpected error: {}".format(e))
         return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return True
+    else:
+        return False
+
+def add_lambda_invoke_permission(FunctionName,SourceArn):
+    try:
+        client = boto3.client('lambda')
+        response = client.add_permission(
+            FunctionName=FunctionName,
+            StatementId='AllowExecutionFromCloudWatch',
+            Action='lambda:InvokeFunction',
+            Principal='events.amazonaws.com',
+            SourceArn=SourceArn
+            )            
+    except ClientError as e:
+        if e.response['ResponseMetadata']['HTTPStatusCode'] == 409:
+            print('Lmabda Invoke Permission Already Exists..')
+            return True
+        else:
+            print("Unexpected error: {}".format(e))
+            return False
     if response['ResponseMetadata']['HTTPStatusCode'] == 200:
         return True
     else:
@@ -128,7 +211,7 @@ def create_lambda_function(FunctionName,Role,Handler,ZipFile,Timeout,Environment
         print("Unexpected error: {}".format(e))
         return {'Status': False}
     if response['ResponseMetadata']['HTTPStatusCode'] == 201:
-        return {'Status': True,'FunctionArn':response['Configuration']['FunctionArn']}
+        return {'Status': True,'FunctionArn':response['FunctionArn']}
     else:
         return {'Status': False}
 
@@ -139,7 +222,7 @@ def get_lambda_function(FunctionName):
             FunctionName=FunctionName
             )         
     except ClientError as e:
-        print("Unexpected error: {}".format(e))
+        #print("Unexpected error: {}".format(e))
         return {'Status': False}
     if response['ResponseMetadata']['HTTPStatusCode'] == 200:
         return {'Status': True,'Configuration':response['Configuration']}
@@ -243,10 +326,11 @@ def modify_user_data(UserDatab64):
     for cmds in UserDataJSON['runcmd']:
         if 'sudo /opt/AutoScaling/uuid_configure.sh' in cmds:
             print('No need to update UserData .')
-            return '#cloud-config\n{}'.format(yaml.dump(UserDataJSON))
+            return {'Status': False ,'UserData': '#cloud-config\n{}'.format(yaml.dump(UserDataJSON)) }
     UserDataJSON['write_files'].append(data)
     UserDataJSON['runcmd'].insert(2,'sudo /opt/AutoScaling/uuid_configure.sh')
-    return '#cloud-config\n{}'.format(yaml.dump(UserDataJSON))
+    print('Finished Modifying User-Data')
+    return {'Status': True ,'UserData': '#cloud-config\n{}'.format(yaml.dump(UserDataJSON)) }
 
 
 def create_launch_config(LaunchConfigurationName,ImageId,SecurityGroups,UserData,InstanceType,IamInstanceProfile):

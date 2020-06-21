@@ -20,6 +20,23 @@ def create_asg_tag(AutoScalingGroupName,Key,value,PropagateAtLaunch):
     else:
         return False
 
+def scale_asg_vms(AutoScalingGroupName,MaxSize,MinSize,DesiredCapacity):
+    try:
+        client = boto3.client('autoscaling')
+        response = client.update_auto_scaling_group(
+            AutoScalingGroupName=AutoScalingGroupName,
+            MaxSize=MaxSize,
+            MinSize=MinSize,
+            DesiredCapacity=DesiredCapacity)            
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return True
+    else:
+        return False
+
+
 
 def create_cloudwatch_metric_alarm(AlarmName,MetricName,Namespace,Threshold,ComparisonOperator,AlarmActions):
     try:
@@ -108,6 +125,7 @@ def create_asg(AutoScalingGroupName,LaunchConfigurationName,subnetList):
             MaxSize=0,
             MinSize=0,
             DesiredCapacity=0,
+            HealthCheckGracePeriod=300,
             VPCZoneIdentifier=subnetList
         )          
     except ClientError as e:
@@ -139,11 +157,14 @@ def create_e2e_asg(asg_uuid_map,Project):
     create_cloudwatch_metric_alarm(asg_name_prefix+'-cpu-low','CPUUtilization','AWS/EC2',10,'GreaterThanOrEqualToThreshold',mp_low_cpu_policy['PolicyARN'])
     create_cloudwatch_metric_alarm(asg_name_prefix+'-memory-low','mem_used_percent','CWAgent',10,'GreaterThanOrEqualToThreshold',mp_low_mem_policy['PolicyARN'])
     print('Creating Lifecycle hook for Autoscaling Group... ')
-    create_asg_lifecycle_hook(asg_name_prefix+'mp-launch-hook',asg_name_prefix,'autoscaling:EC2_INSTANCE_LAUNCHING',existing_asg_lc_hook_details['LifecycleHooks'][0]['RoleARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationTargetARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationMetadata'])
-    create_asg_lifecycle_hook(asg_name_prefix+'mp-terminate-hook',asg_name_prefix,'autoscaling:EC2_INSTANCE_TERMINATING',existing_asg_lc_hook_details['LifecycleHooks'][0]['RoleARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationTargetARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationMetadata'])
+    create_asg_lifecycle_hook(asg_name_prefix+'-launch-hook',asg_name_prefix,'autoscaling:EC2_INSTANCE_LAUNCHING',existing_asg_lc_hook_details['LifecycleHooks'][0]['RoleARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationTargetARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationMetadata'])
+    create_asg_lifecycle_hook(asg_name_prefix+'-terminate-hook',asg_name_prefix,'autoscaling:EC2_INSTANCE_TERMINATING',existing_asg_lc_hook_details['LifecycleHooks'][0]['RoleARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationTargetARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationMetadata'])
     print('Creating Tags on Autoscaling Group... ')
     create_asg_tag(asg_name_prefix,'Project',Project,True)
     create_asg_tag(asg_name_prefix,'Name',asg_name_prefix,True)
     create_asg_tag(asg_name_prefix,'Type','runtime',True)
     create_asg_tag(asg_name_prefix,'SubType','messageprocessor',True)
+    print('Scaling VMs in the Autoscaling Group ==> {}'.format(asg_name_prefix))
+    scale_asg_vms(asg_name_prefix,existing_asg_details['AutoScalingGroups']['MaxSize'],existing_asg_details['AutoScalingGroups']['MinSize'],existing_asg_details['AutoScalingGroups']['DesiredCapacity'])
     print('Finished Creating Autoscaling Group ==> {}'.format(asg_name_prefix))
+    return asg_name_prefix

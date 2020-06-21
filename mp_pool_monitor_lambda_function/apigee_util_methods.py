@@ -5,6 +5,10 @@ import warnings
 import traceback
 import logging
 import json
+from time import time
+import concurrent.futures
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -250,10 +254,22 @@ def get_org_env_proxy_count(baseUrl,username,password,org):
   #print ("POST Response text{}".format(result.text))
   #print ("POST Response code{}".format(result.status_code))
 
-def get_mp_proxy_count(baseUrl,username,password,uuid):
+def get_mp_proxy_count_old(baseUrl,username,password,uuid):
   proxy_count = 0
   mp_org_bindings = get_mp_org_bindings(baseUrl,username,password,uuid)
   for org_env in mp_org_bindings:
     each_org_proxy_count = get_org_env_proxy_count(baseUrl,username,password,org_env['organization'])
     proxy_count += each_org_proxy_count
+  return proxy_count
+
+def get_mp_proxy_count(baseUrl,username,password,uuid):
+  mp_org_bindings = get_mp_org_bindings(baseUrl,username,password,uuid)
+  proxy_count = 0
+  thread_list = []
+  with concurrent.futures.ThreadPoolExecutor() as executor:
+      futures = [executor.submit(get_org_env_proxy_count, baseUrl,username,password,org_env['organization']) for org_env in mp_org_bindings]
+  for f in futures:
+      proxy_count += f.result()
+  org_count = len(mp_org_bindings)
+  print('{} proxies found in {} orgs'.format(proxy_count,org_count))
   return proxy_count
