@@ -1,12 +1,29 @@
 import json,sys
 import boto3
 from botocore.exceptions import ClientError
+from botocore.response import StreamingBody
 import yaml
 import base64
 import zipfile
-import os
+import os,shutil
 from os.path import basename
 import subprocess
+
+
+def create_dir(dir_path):
+    try:
+        os.makedirs('gen')
+    except FileExistsError:
+        pass
+
+def delete_dir(dir_path):
+    try:
+        shutil.rmtree(dir_path)
+    except FileNotFoundError:
+        pass
+    
+def copy_dir(src, dst, symlinks=False, ignore=None):
+    shutil.copytree(src, dst, symlinks, ignore)
 
 def filter_tags(tags,Key):
     for tag in tags:
@@ -154,6 +171,24 @@ def create_cloudwatch_event_target(RuleName,Id,Arn):
         return True
     else:
         return False
+
+def test_lambda_function(FunctionName,Payload):
+    try:
+        client = boto3.client('lambda')
+        response = client.invoke(
+            FunctionName=FunctionName,
+            Payload=Payload
+        )         
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return {'Status': False}
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        responsePayload = response['Payload']
+        lambda_output = StreamingBody(responsePayload,response['ResponseMetadata']['HTTPHeaders']['content-length']).read().decode('utf-8')
+        return {'Status': True,'lambda_output': lambda_output}
+    else:
+        return {'Status': False}
+
 
 def add_lambda_invoke_permission(FunctionName,SourceArn):
     try:

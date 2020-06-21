@@ -34,9 +34,12 @@ def update_existing_iam_policy(AutoScalingGroupName,RoleName):
 
 
 def update_existing_lambda(python_bin,functionName,functionDir):
-    functionZip = 'asgfunction.zip'
-    pip_dependecies(python_bin,functionDir,'{}/requirements.txt'.format(functionDir))
-    build_zip(functionZip,functionDir)
+    functionZip = 'gen/asgfunction.zip'
+    create_dir('gen')
+    functionTargetDir = 'gen/{}'.format(functionName)
+    copy_dir(functionDir,functionTargetDir)
+    pip_dependecies(python_bin,functionTargetDir,'{}/requirements.txt'.format(functionTargetDir))
+    build_zip(functionZip,functionTargetDir)
     #build_zip_b64 = read_file_b64(functionZip)
     lambdaDetails = get_lambda_function(functionName)
     if lambdaDetails['Status']:
@@ -44,12 +47,16 @@ def update_existing_lambda(python_bin,functionName,functionDir):
         lambda_status = update_lambda_function(functionName,functionZip)
         if update_lambda_function(functionName,functionZip):
             print('Finished Updating LambdaFuntion ==> {}'.format(functionName))
+    delete_dir('gen')
 
 
 def create_mp_pool_monitor_lambda(python_bin,referenceFunction,functionName,functionDir,Project,ProxyCountThreshold):
-    functionZip = 'poolmonitorfunction.zip'
-    pip_dependecies(python_bin,functionDir,'{}/requirements.txt'.format(functionDir))
-    build_zip(functionZip,functionDir)
+    functionZip = 'gen/poolmonitorfunction.zip'
+    create_dir('gen')
+    functionTargetDir = 'gen/{}'.format(functionName)
+    copy_dir(functionDir,functionTargetDir)
+    pip_dependecies(python_bin,functionTargetDir,'{}/requirements.txt'.format(functionTargetDir))
+    build_zip(functionZip,functionTargetDir)
     #build_zip_b64 = read_file_b64(functionZip)
     lambdaDetails = get_lambda_function(referenceFunction)
     if lambdaDetails['Status']:
@@ -60,7 +67,7 @@ def create_mp_pool_monitor_lambda(python_bin,referenceFunction,functionName,func
         env_variables['ProxyCountThreshold'] = ProxyCountThreshold
         if create_lambda_function(functionName,lambdaDetails['Configuration']['Role'],lambdaDetails['Configuration']['Handler'],functionZip,900,env_variables):
             print('Successfully Finished Creating LambdaFuntion ==> {}'.format(functionName))
-
+    delete_dir('gen')
 
 def update_existing_asg(AutoScalingGroupName):
     print('Getting Details of ASG ==> {}'.format(AutoScalingGroupName))
@@ -167,18 +174,37 @@ def main():
         print('Adding Invoke Function by Event ==> {} Permission to Target Lambda Function==> {}'.format(cloudwatch_event_rule_name,poolLambdaName))
         add_lambda_invoke_permission(poolLambdaName,event_rule_status['RuleArn'])
         ############### Handle CloudWatch CRON ###############
-        """
+
+        ############### Validate MP Pool Monitor Lambda ###############
+        print('\nValidating Lambda Function ==> {}'.format(poolLambdaName))
+        lambda_response = test_lambda_function(poolLambdaName,'{}')
+        if lambda_response['Status']:
+            lambda_json_response = json.loads(lambda_response['lambda_output'])
+            if lambda_json_response['statusCode'] == 200:
+                print('Validation of  Lambda Function ==> {} Successfull .More Details below\n'.format(poolLambdaName))
+                print(lambda_json_response)
+            else:
+                print('Validation Errors in Lambda Function ==> {}. More Details below\n'.format(poolLambdaName))
+                print(lambda_json_response)
+                banner('END of MESSAGE PROCESSOR POOL SCALING')
+                sys.exit(1)
+        else:
+            print('Failed to Validate Lambda Function ==> {}'.format(poolLambdaName))
+            banner('END of MESSAGE PROCESSOR POOL SCALING')
+            sys.exit(1)
+
+        ############### Validate MP Pool Monitor Lambda ###############
+        
         ############### Handle Autoscaling ###############
         print('\nUpgrading Message Processor ASG ...\n')
         update_existing_asg(asg)
         ############### Handle Autoscaling ###############
-        """
+        print('\n All Processes have finished sueccefully to enable Scaling of Message-Processor AutoScaling Group')
         banner('END of MESSAGE PROCESSOR POOL SCALING')
     else:
         print('\nERROR: Environment Variable "Project" is not Set\nSet it to coninue...')
         banner('END of MESSAGE PROCESSOR POOL SCALING')
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
