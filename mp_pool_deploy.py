@@ -47,6 +47,10 @@ def update_existing_lambda(python_bin,functionName,functionDir):
         lambda_status = update_lambda_function(functionName,functionZip)
         if update_lambda_function(functionName,functionZip):
             print('Finished Updating LambdaFuntion ==> {}'.format(functionName))
+            if set_lambda_function_concurrency(functionName,1):
+                print('Successfully Set Lambda Function Concurrency to ==> 1')
+            else:
+                print('Failed in setting Lambda Function Concurrency to ==> 1')
     delete_dir('gen')
 
 
@@ -67,6 +71,10 @@ def create_mp_pool_monitor_lambda(python_bin,referenceFunction,functionName,func
         env_variables['ProxyCountThreshold'] = ProxyCountThreshold
         if create_lambda_function(functionName,lambdaDetails['Configuration']['Role'],lambdaDetails['Configuration']['Handler'],functionZip,900,env_variables):
             print('Successfully Finished Creating LambdaFuntion ==> {}'.format(functionName))
+            if set_lambda_function_concurrency(functionName,1):
+                print('Successfully Set Lambda Function Concurrency to ==> 1')
+            else:
+                print('Failed in setting Lambda Function Concurrency to ==> 1')
     delete_dir('gen')
 
 def update_existing_asg(AutoScalingGroupName):

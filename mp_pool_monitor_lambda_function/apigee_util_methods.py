@@ -264,12 +264,23 @@ def get_mp_proxy_count_old(baseUrl,username,password,uuid):
 
 def get_mp_proxy_count(baseUrl,username,password,uuid):
   mp_org_bindings = get_mp_org_bindings(baseUrl,username,password,uuid)
+  print('orgs ==>{}'.format(len(mp_org_bindings)))
+  mp_org_chunks = []
+  chunk_split = 200
+  if len(mp_org_bindings) > chunk_split:
+        for i in range(0,len(mp_org_bindings),chunk_split):
+            mp_org_chunks.append(mp_org_bindings[i:i+chunk_split])
+  else:
+      mp_org_chunks.append(mp_org_bindings)
+  print('Number Org Chunks ==>{}'.format(len(mp_org_chunks)))
   proxy_count = 0
-  thread_list = []
-  with concurrent.futures.ThreadPoolExecutor() as executor:
-      futures = [executor.submit(get_org_env_proxy_count, baseUrl,username,password,org_env['organization']) for org_env in mp_org_bindings]
-  for f in futures:
-      proxy_count += f.result()
+  for each_chunk in mp_org_chunks:
+      print('Querying orgs chunks ==>{}'.format(len(each_chunk)))
+      with concurrent.futures.ThreadPoolExecutor() as executor:
+          futures = [executor.submit(get_org_env_proxy_count, baseUrl,username,password,org_env['organization']) for org_env in each_chunk]
+      for f in futures:
+          proxy_count += f.result()
   org_count = len(mp_org_bindings)
+  print('Processed Number of Orgs ==> {}'.format(org_count))
   print('{} proxies found in {} orgs'.format(proxy_count,org_count))
   return proxy_count

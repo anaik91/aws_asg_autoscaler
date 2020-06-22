@@ -39,7 +39,7 @@ def create_policy_version(PolicyArn,PolicyDocument):
             PolicyDocument=PolicyDocument,
             SetAsDefault=True
         )
-        print(response)          
+        #print(response)          
     except ClientError as e:
         print("Unexpected error: {}".format(e))
         return False
@@ -171,6 +171,22 @@ def create_cloudwatch_event_target(RuleName,Id,Arn):
         return True
     else:
         return False
+
+def set_lambda_function_concurrency(FunctionName,ReservedConcurrentExecutions):
+    try:
+        client = boto3.client('lambda')
+        response = client.put_function_concurrency(
+            FunctionName=FunctionName,
+            ReservedConcurrentExecutions=ReservedConcurrentExecutions
+            )            
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return True
+    else:
+        return False
+
 
 def test_lambda_function(FunctionName,Payload):
     try:
