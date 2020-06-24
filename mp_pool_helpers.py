@@ -31,6 +31,57 @@ def filter_tags(tags,Key):
             return tag['Value']
     return None
 
+def update_secrets_value(SecretId,SecretString):
+    try:
+        client = boto3.client('secretsmanager')
+        response = client.update_secret(
+            SecretId = SecretId,
+            SecretString=SecretString
+        )      
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return True
+    else:
+        return False
+
+def get_secrets_value(SecretId):
+    try:
+        client = boto3.client('secretsmanager')
+        response = client.get_secret_value(
+            SecretId = SecretId
+        )      
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return {'Status': False}
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return {'Status': True,'SecretString': json.loads(response['SecretString'])}
+    else:
+        return {'Status': False}
+
+def get_secrets_by_tag(tags):
+    #taglist = [{'Project':'aws-mp-pool-001'}]
+    asg_list = []
+    try:
+        client = boto3.client('secretsmanager')
+        paginator = client.get_paginator('list_secrets')
+        page_iterator = paginator.paginate(
+            PaginationConfig={'PageSize': 100}
+        )
+        filter = 'SecretList[]'
+        for tag in tags:
+            filter = ('{} | [?contains(Tags[?Key==`{}`].Value, `{}`)]'.format(filter, tag, tags[tag]))
+        filtered_asgs = page_iterator.search(filter)
+        for asg in filtered_asgs:
+            asg_list.append(asg['Name'])
+        return {'Status': True,'secret_list':asg_list}
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return {'Status': False}
+    else:
+        return {'Status': False}
+
 def create_policy_version(PolicyArn,PolicyDocument):
     try:
         client = boto3.client('iam')
@@ -371,7 +422,8 @@ def get_launch_config(LaunchConfigurationNames):
         return {'Status': False}
 
 def modify_user_data(UserDatab64):
-    data = {'content': '#!/bin/bash\nKEY=uuid\nINSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)\nREGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | awk -F\\" \'{print $4}\')\nTAG_VALUE=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" "Name=key,Values=$KEY" --region=$REGION --output=text | cut -f5)\nif [ "${TAG_VALUE}" != "Default"  ] || [ "${TAG_VALUE}" != "" ] ; then\n  mkdir -p /opt/apigee/data/edge-message-processor/${TAG_VALUE}\n  chown apigee:apigee -R /opt/apigee/data\nfi\n', 'path': '/opt/AutoScaling/uuid_configure.sh', 'permissions': '0755'}
+    #data = {'content': '#!/bin/bash\nKEY=uuid\nINSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)\nREGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | awk -F\\" \'{print $4}\')\nTAG_VALUE=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" "Name=key,Values=$KEY" --region=$REGION --output=text | cut -f5)\nif [ "${TAG_VALUE}" != "Default"  ] || [ "${TAG_VALUE}" != "" ] ; then\n  mkdir -p /opt/apigee/data/edge-message-processor/${TAG_VALUE}\n  chown apigee:apigee -R /opt/apigee/data\nfi\n', 'path': '/opt/AutoScaling/uuid_configure.sh', 'permissions': '0755'}
+    data = {'content': '#!/bin/bash\nKEY=uuid\nINSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)\nREGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | awk -F\\" \'{print $4}\')\nTAG_VALUE=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" "Name=key,Values=$KEY" --region=$REGION --output=text | cut -f5)\nif [ "$TAG_VALUE" == "pool" ]; then\n    touch /opt/AutoScaling/python/pool.txt\nelif [ -z "$TAG_VALUE" ]; then\n    touch /opt/AutoScaling/python/default.txt\nelse\n    mkdir -p /opt/apigee/data/edge-message-processor/${TAG_VALUE}\n    chown apigee:apigee -R /opt/apigee/data\nfi', 'path': '/opt/AutoScaling/uuid_configure.sh', 'permissions': '0755'}
     UserData = base64.b64decode(UserDatab64).decode('utf-8')
     UserDataJSON = yaml.safe_load(UserData)
     for cmds in UserDataJSON['runcmd']:
@@ -380,6 +432,9 @@ def modify_user_data(UserDatab64):
             return {'Status': False ,'UserData': '#cloud-config\n{}'.format(yaml.dump(UserDataJSON)) }
     UserDataJSON['write_files'].append(data)
     UserDataJSON['runcmd'].insert(2,'sudo /opt/AutoScaling/uuid_configure.sh')
+    #UserDataJSON['runcmd'].remove('sudo ln -s /etc/init.d/message-processor-association /etc/rc0.d/S01ec2rebootmessage-processor')
+    #UserDataJSON['runcmd'].remove('sudo chkconfig --add /etc/init.d/message-processor-association')
+    #UserDataJSON['runcmd'].remove('sudo service message-processor-association start')
     print('Finished Modifying User-Data')
     return {'Status': True ,'UserData': '#cloud-config\n{}'.format(yaml.dump(UserDataJSON)) }
 

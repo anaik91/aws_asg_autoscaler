@@ -8,6 +8,26 @@ from  time import time
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def check_for_scalein(AutoScalingGroupName,EC2InstanceId):
+    try:
+        client = boto3.client('autoscaling')
+        response = client.describe_scaling_activities(
+            AutoScalingGroupName=AutoScalingGroupName
+        )
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        for each_activity in response['Activities']:
+            if EC2InstanceId in each_activity['Description']:
+                if 'terminated or stopped.' in each_activity['Cause']:
+                    return 'not-scale-in'
+                else:
+                    return 'scale-in'
+        return True
+    else:
+        return False
+
 
 def toggle_asg_lifecycle(LifecycleHookName,AutoScalingGroupName,EC2InstanceId,LifecycleActionToken):
     try:
@@ -196,6 +216,18 @@ def lambda_handler(event, context):
                     'statusCode': 200,
                     'body': 'Removed Router/MP'
                 }
+        scale_in_check = check_for_scalein(asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId'])
+        print('Scale IN Check ========> {}'.format(scale_in_check))
+        if scale_in_check == 'scale-in':
+            print('Removing {} in Progress ...'.format(compType))
+            remove_status = manage_component.remove(compType,component_name,ip_address)
+            print('Removing {} Finished'.format(compType))
+            print('Proceeding with Instance - {} Termination'.format(asg_data['EC2InstanceId']))
+            if toggle_asg_lifecycle(asg_data['LifecycleHookName'],asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId'],asg_data['LifecycleActionToken']):
+                return {
+                    'statusCode': 200,
+                    'body': 'Removed Router/MP'
+                }
         #uuid = 'uuid_' + str(time()).split('.')[0]
         uuid = manage_component.get_uuid(compType,component_name,ip_address)
         print('UUID ==========> {}'.format(uuid))
@@ -296,7 +328,7 @@ def lambda_handler(event, context):
             tag_instance(asg_data['EC2InstanceId'],'uuid',uuid)
         else:
             print('Proceeding with Default tagging on Instance - {}'.format(asg_data['EC2InstanceId']))
-            tag_instance(asg_data['EC2InstanceId'],'uuid','Default')
+            tag_instance(asg_data['EC2InstanceId'],'uuid','pool')
         if toggle_asg_lifecycle(asg_data['LifecycleHookName'],asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId'],asg_data['LifecycleActionToken']):
             return {
                 'statusCode': 200,

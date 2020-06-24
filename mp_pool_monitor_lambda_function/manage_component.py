@@ -6,6 +6,7 @@ import boto3
 import base64
 import json
 from botocore.exceptions import ClientError
+from design_time_helpers import update_DT_mp_uuid
 
 #import azure.functions as func
 logger = logging.getLogger()
@@ -76,3 +77,16 @@ def proxy_count_from_mp_uuid(uuid):
     baseUrl = protocol+ '://' + ms_ip + ':' + port
     proxy_count = apigee_utils.get_mp_proxy_count(baseUrl,username,password,uuid)
     return proxy_count
+
+
+
+def update_dt(uuid_list):
+    logger.info('Component Removal Request Received')
+    dt_oauth_host = get_secret("dt_oauth_host")
+    dt_apiportal_host = get_secret("dt_apiportal_host")
+    dt_oauth_username = get_secret("dt_oauth_username")
+    dt_oauth_password = get_secret("dt_oauth_password")
+    if update_DT_mp_uuid(uuid_list,dt_oauth_host,dt_apiportal_host,dt_oauth_username,dt_oauth_password):
+        return True
+    else:
+        return False

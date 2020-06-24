@@ -85,6 +85,10 @@ def lambda_handler(event, context):
         createAsgFlag,activeAsg = check_asg(asg_uuid_map,int(ProxyCountThreshold))
         print('createAsgFlag ==> {}'.format(createAsgFlag))
         print('Active UUIDs ==> {}'.format(asg_uuid_map[activeAsg]['uuid_list']))
+        if manage_component.update_dt(asg_uuid_map[activeAsg]['uuid_list']):
+            print('Updated Design Time')
+        else:
+            print('Failure in Updating Design Time')
         if createAsgFlag:
             new_asg_name = create_e2e_asg(asg_uuid_map,Project)
             return {

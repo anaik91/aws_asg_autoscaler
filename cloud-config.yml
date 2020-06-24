@@ -1,0 +1,25 @@
+#cloud-config
+users:
+  - name: concourseci
+    ssh-authorized-keys:
+      - ${public_key_data}
+    sudo:  ['ALL=(ALL) NOPASSWD:ALL']
+    shell: /bin/bash
+    home: /home/concourseci
+    groups: wheel
+
+write_files:
+  - content: |
+      #!/bin/bash
+      KEY=uuid
+      INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+      REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | grep region | awk -F\" '{print $4}')
+      TAG_VALUE=$(aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" "Name=key,Values=$KEY" --region=$REGION --output=text | cut -f5)
+      if [ "$TAG_VALUE" == "pool" ]; then
+          touch /opt/AutoScaling/python/pool.txt
+      elif [ -z "$TAG_VALUE" ]; then
+          touch /opt/AutoScaling/python/default.txt
+      else
+          mkdir -p /opt/apigee/data/edge-message-processor/${TAG_VALUE}
+          chown apigee:apigee -R /opt/apigee/data
+      fi
