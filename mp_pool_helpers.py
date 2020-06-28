@@ -168,7 +168,7 @@ def get_asgs_by_tag(tags):
 def pip_dependecies(python_bin,target,requirements):
     print('\nResolving Lambda Dependencies..')
     try:
-        subprocess.check_output([python_bin,'-m','pip','install','--target',target,'-r', requirements ])
+        subprocess.check_output([python_bin,'-m','pip','install','--target',target,'-r', requirements ,'--no-color'])
     except FileNotFoundError:
         print('{} not found . Try using python3 or python3.<version>'.format(python_bin))
         sys.exit(1)
@@ -279,6 +279,25 @@ def add_lambda_invoke_permission(FunctionName,SourceArn):
     else:
         return False
 
+def add_lambda_destination(FunctionName,LambdaARN):
+    try:
+        client = boto3.client('lambda')
+        response = client.put_function_event_invoke_config(
+            FunctionName=FunctionName,
+            DestinationConfig={
+                'OnSuccess': {
+                    'Destination': LambdaARN
+                }
+            }
+        )          
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return True
+    else:
+        return False
+
 def update_lambda_function(FunctionName,ZipFile):
     try:
         client = boto3.client('lambda')
@@ -330,6 +349,55 @@ def get_lambda_function(FunctionName):
         return {'Status': True,'Configuration':response['Configuration']}
     else:
         return {'Status': False}
+
+def create_asg_tag(AutoScalingGroupName,Key,value,PropagateAtLaunch):
+    try:
+        client = boto3.client('autoscaling')
+        response = client.create_or_update_tags(Tags=[{
+            'ResourceId': AutoScalingGroupName,
+            'ResourceType': 'auto-scaling-group',
+            'Key': Key,
+            'Value': value,
+            'PropagateAtLaunch': PropagateAtLaunch}])
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return True
+    else:
+        return False
+
+def get_asg_instance_list(asg):
+    #taglist = [{'Name':'sample'}]
+    instance_list = []
+    try:
+        client = boto3.client('autoscaling')
+        response = client.describe_auto_scaling_groups(AutoScalingGroupNames=[asg])            
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return {'Status': False}
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        for i in response['AutoScalingGroups']:
+            for j in i['Instances']:
+                instance_list.append(j['InstanceId'])
+        return {'Status': True,'instance_list':instance_list}
+    else:
+        return {'Status': False}
+
+def get_instance_ip(EC2InstanceId):
+    try:
+        client = boto3.client('ec2')
+        response = client.describe_instances(InstanceIds=[EC2InstanceId])
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return {'Status' : False }
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        try:
+            return {'Status' : True, 'ip_address': response['Reservations'][0]['Instances'][0]['PrivateIpAddress']}
+        except KeyError:
+            return {'Status' : True, 'ip_address': None}
+    else:
+        return {'Status' : False }
 
 def get_asg_lifecycle_hook(AutoScalingGroupName):
     #subnetList = ','.join(subnetList)

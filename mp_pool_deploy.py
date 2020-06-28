@@ -20,7 +20,9 @@ def update_existing_secrets(SecretId,dt_oauth_host,dt_oauth_username,dt_oauth_pa
             if update_secrets_value(SecretId,json.dumps(secrets_value)):
                 return True
             else:
-                False
+                return False
+    else:
+        return False
 
 def update_existing_iam_policy(AutoScalingGroupName,RoleName):
     asg_lifecycle_hook_list = get_asg_lifecycle_hook(AutoScalingGroupName)
@@ -46,6 +48,11 @@ def update_existing_iam_policy(AutoScalingGroupName,RoleName):
                 'Resource': '*',
                 'Effect': 'Allow'
             })
+        updated_policy_document['Statement'].append({
+                'Action': 'lambda:InvokeFunction',
+                'Resource': '*',
+                'Effect': 'Allow'
+            })
         
         if create_policy_version(policyArn,json.dumps(updated_policy_document)):
             print('Updated IAM Policy ==> {}'.format(policyArn))
@@ -53,6 +60,9 @@ def update_existing_iam_policy(AutoScalingGroupName,RoleName):
         else:
             print('Failure Updating IAM Policy ==> {}'.format(policyArn))
             return False
+    else:
+        print('Unable to find any IAM Policy  in the role ==> {}'.format(RoleName))
+        return False
 
 
 def update_existing_lambda(python_bin,functionName,functionDir):
@@ -73,6 +83,10 @@ def update_existing_lambda(python_bin,functionName,functionDir):
                 print('Successfully Set Lambda Function Concurrency to ==> 1')
             else:
                 print('Failed in setting Lambda Function Concurrency to ==> 1')
+        else:
+            print('Failed to Update LambdaFuntion ==> {}'.format(functionName))
+    else:
+        print('Unable to Fetch LambdaFuntion ==> {}'.format(functionName))
     delete_dir('gen')
 
 
@@ -97,6 +111,10 @@ def create_mp_pool_monitor_lambda(python_bin,referenceFunction,functionName,func
                 print('Successfully Set Lambda Function Concurrency to ==> 1')
             else:
                 print('Failed in setting Lambda Function Concurrency to ==> 1')
+        else:
+            print('Unable to Create a LambdaFuntion ==> {}'.format(functionName))
+    else:
+        print('Unable to Fetch LambdaFuntion ==> {}'.format(functionName))
     delete_dir('gen')
 
 def update_existing_asg(AutoScalingGroupName,NewImageId):
@@ -128,7 +146,17 @@ def update_existing_asg(AutoScalingGroupName,NewImageId):
             lch = LifecycleHooks['LifecycleHooks'][0]
             print('Updating of ASG ==> {} with lifecycle_hook '.format(AutoScalingGroupName))
             if update_asg_lifecycle_hook(Project+'-mp-launch-hook',lch['AutoScalingGroupName'],'autoscaling:EC2_INSTANCE_LAUNCHING',lch['RoleARN'],lch['NotificationTargetARN'],lch['NotificationMetadata']):
-                print('Successfully Updated the ASG ==> {} with lifecycle_hook'.format(AutoScalingGroupName))
+                print('Successfully Updated the ASG ==> {} with lifecycle_hook\n'.format(AutoScalingGroupName))
+        instanceList = get_asg_instance_list(AutoScalingGroupName)
+        if instanceList['Status']:
+            instance_list = instanceList['instance_list']
+            for each_instance in instance_list:
+                ip_status = get_instance_ip(each_instance)
+                if ip_status['Status']:
+                    if ip_status['ip_address'] is not None:
+                        ip_address = ip_status['ip_address']
+                        print('Tagging ASG ==> {} With Key ==> {} & Value ==> {}'.format(AutoScalingGroupName,each_instance,ip_address))
+                        create_asg_tag(AutoScalingGroupName,each_instance,ip_address,False)
 
 
 def main():
@@ -137,13 +165,13 @@ def main():
     config.read('input.properties')
     print('\nPopulating Inputs from "input.propeties" ...\n')
     ############### Populating Inputs ###############
-    Project = config.get('Inputs','Project')
-    ProxyCountThreshold = config.get('Inputs','ProxyCountThreshold')
-    AmiID = config.get('Inputs','AmiID')
-    dt_oauth_host = config.get('Inputs','dt_oauth_host')
-    dt_oauth_username = config.get('Inputs','dt_oauth_username')
-    dt_oauth_password = config.get('Inputs','dt_oauth_password')
-    dt_apiportal_host = config.get('Inputs','dt_apiportal_host')
+    Project = config.get('RunTime','Project')
+    ProxyCountThreshold = config.get('RunTime','ProxyCountThreshold')
+    AmiID = config.get('RunTime','AmiID')
+    dt_oauth_host = config.get('DesignTime','dt_oauth_host')
+    dt_oauth_username = config.get('DesignTime','dt_oauth_username')
+    dt_oauth_password = config.get('DesignTime','dt_oauth_password')
+    dt_apiportal_host = config.get('DesignTime','dt_apiportal_host')
     autoscaling_lambda_dir = 'mp-pool-clip-asg-tagging'
     mp_pool_monitor_lambda_dir = 'mp_pool_monitor_lambda_function'
     ############### Populating Inputs ###############
@@ -189,6 +217,10 @@ def main():
             print('Unable to find Secrets in Project ==> {}'.format(Project))
             banner('END of MESSAGE PROCESSOR POOL SCALING')
             sys.exit(1)
+    else:
+        print('Unable to find Secrets in Project ==> {}'.format(Project))
+        banner('END of MESSAGE PROCESSOR POOL SCALING')
+        sys.exit(1)
     ############### Checking Resource availability ###############
     
     ############### Handle Secrets ###############
@@ -229,6 +261,14 @@ def main():
     print('\nValidating IAM Policy of role ==> {} has relevant access to Create Autoscaling Group'.format(lambda_role_name))
     update_existing_iam_policy(asg,lambda_role_name)
     ############### Handle IAM Policy ###############
+
+    ############### Set Lambda Destination ###############
+    print('\nSetting Lambda Destination on  ==> {} to ==> {}'.format(existingLambdaName,poolLambdaARN))
+    if add_lambda_destination(existingLambdaName,poolLambdaARN):
+        print('Successfully Set Lambda Destination')
+    else:
+        print('Failed to Set Set Lambda Destination')
+    ############### Set Lambda Destination ###############
     
     ############### Handle CloudWatch CRON ###############
     print('\nCreating/Updating Cloudwatch Event Rule to enable MP Pool Monitoring...\n')

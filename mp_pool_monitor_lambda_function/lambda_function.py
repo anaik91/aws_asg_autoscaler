@@ -60,11 +60,12 @@ def lambda_handler(event, context):
                 for each_instance in instance_list:
                     ip_status = get_instance_ip(each_instance)
                     if ip_status['Status']:
-                        ip_address = ip_status['ip_address']
-                        ip_list.append(ip_address)
-                        uuid = manage_component.get_uuid('message-processor','mp',ip_address)
-                        if uuid is not None:
-                            uuid_list.append(uuid)
+                        if ip_status['ip_address'] is not None:
+                            ip_address = ip_status['ip_address']
+                            ip_list.append(ip_address)
+                            uuid = manage_component.get_uuid('message-processor','mp',ip_address)
+                            if uuid is not None:
+                                uuid_list.append(uuid)
                     else:
                         return {
                         'statusCode': 500,
@@ -85,10 +86,6 @@ def lambda_handler(event, context):
         createAsgFlag,activeAsg = check_asg(asg_uuid_map,int(ProxyCountThreshold))
         print('createAsgFlag ==> {}'.format(createAsgFlag))
         print('Active UUIDs ==> {}'.format(asg_uuid_map[activeAsg]['uuid_list']))
-        if manage_component.update_dt(asg_uuid_map[activeAsg]['uuid_list']):
-            print('Updated Design Time')
-        else:
-            print('Failure in Updating Design Time')
         if createAsgFlag:
             new_asg_name = create_e2e_asg(asg_uuid_map,Project)
             return {
@@ -96,11 +93,20 @@ def lambda_handler(event, context):
                 'body': 'New Autoscaling Group Created {}'.format(new_asg_name)
             }
         else:
-            return {
+            if manage_component.update_dt(asg_uuid_map[activeAsg]['uuid_list']):
+                print('Updated Design Time')
+                return {
                     'statusCode': 200,
                     'body': 'No Change to the MP Pools',
                     'asg_list' :asg_uuid_map
                 }
+            else:
+                print('Failure in Updating Design Time')
+                return {
+                        'statusCode': 500,
+                        'body': 'Issue Updating DT',
+                        'asg_list' :asg_uuid_map
+                    }
     else:
         return {
                 'statusCode': 404,

@@ -79,6 +79,20 @@ def create_asg_tag(AutoScalingGroupName,Key,value,PropagateAtLaunch):
     else:
         return False
 
+def delete_asg_tag(AutoScalingGroupName,Key):
+    try:
+        client = boto3.client('autoscaling')
+        response = client.delete_tags(Tags=[{
+            'ResourceId': AutoScalingGroupName,
+            'ResourceType': 'auto-scaling-group',
+            'Key': Key}])
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return True
+    else:
+        return False
 
 def get_instance_tag(EC2InstanceId,key):
     ec2 = boto3.resource('ec2')
@@ -97,7 +111,13 @@ def get_instance_ip(EC2InstanceId):
         print("Unexpected error: {}".format(e))
         return {'Status' : False }
     if response['ResponseMetadata']['HTTPStatusCode'] == 200:
-        return {'Status' : True, 'ip_address': response['Reservations'][0]['Instances'][0]['PrivateIpAddress']}
+        if len(response['Reservations']) != 0:
+            try:
+                return {'Status' : True, 'ip_address': response['Reservations'][0]['Instances'][0]['PrivateIpAddress']}
+            except KeyError:
+                return {'Status' : False}
+        else:
+            return {'Status' : False}  
     else:
         return {'Status' : False }
 
@@ -201,10 +221,19 @@ def lambda_handler(event, context):
         if instance_data['Status']:
             ip_address = instance_data['ip_address']
         else:
-            return {
-                'statusCode': 500,
-                'body': 'Unable to Fetch IP of {}'.format(asg_data['EC2InstanceId'])
-            }
+            print('Unable to Get IP from Instance, Checking ASG ==> {} Tags for tag ==> {}'.format(asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId']))
+            asg_tag_status = get_asg_tag(asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId'])
+            if asg_tag_status['Status']:
+                ip_address = asg_tag_status['value']
+            else:
+                print('Unable to Get IP from ASG Tags .Completing Termination Action')
+                if toggle_asg_lifecycle(asg_data['LifecycleHookName'],asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId'],asg_data['LifecycleActionToken']):
+                    return {
+                        'statusCode': 200,
+                        'body': 'Removed Router/MP'
+                    }
+        print('Deleting Tag Key ==> {} from ASH ==>{}'.format(asg_data['EC2InstanceId'],asg_data['AutoScalingGroupName']))
+        delete_asg_tag(asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId'])
         print('Fetching UUID for IP :  {} in Progress ...'.format(ip_address))
         if compType == 'router':
             print('Removing {} in Progress ...'.format(compType))
@@ -326,9 +355,15 @@ def lambda_handler(event, context):
         if uuid is not None:
             print('Proceeding with tagging on Instance - {}'.format(asg_data['EC2InstanceId']))
             tag_instance(asg_data['EC2InstanceId'],'uuid',uuid)
+            instance_data = get_instance_ip(asg_data['EC2InstanceId'])
+            print('Proceeding with tagging ASG ==> {} with Instance ==> {} IPAddess ==> {}'.format(asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId'],instance_data['ip_address']))
+            create_asg_tag(asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId'],instance_data['ip_address'],False)
         else:
-            print('Proceeding with Default tagging on Instance - {}'.format(asg_data['EC2InstanceId']))
+            print('Proceeding with Pool tagging on Instance - {}'.format(asg_data['EC2InstanceId']))
             tag_instance(asg_data['EC2InstanceId'],'uuid','pool')
+            instance_data = get_instance_ip(asg_data['EC2InstanceId'])
+            print('Proceeding with tagging ASG ==> {} with Instance ==> {} IPAddess ==> {}'.format(asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId'],instance_data['ip_address']))
+            create_asg_tag(asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId'],instance_data['ip_address'],False)
         if toggle_asg_lifecycle(asg_data['LifecycleHookName'],asg_data['AutoScalingGroupName'],asg_data['EC2InstanceId'],asg_data['LifecycleActionToken']):
             return {
                 'statusCode': 200,

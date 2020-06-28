@@ -104,7 +104,10 @@ def get_instance_ip(EC2InstanceId):
         print("Unexpected error: {}".format(e))
         return {'Status' : False }
     if response['ResponseMetadata']['HTTPStatusCode'] == 200:
-        return {'Status' : True, 'ip_address': response['Reservations'][0]['Instances'][0]['PrivateIpAddress']}
+        try:
+            return {'Status' : True, 'ip_address': response['Reservations'][0]['Instances'][0]['PrivateIpAddress']}
+        except KeyError:
+            return {'Status' : True, 'ip_address': None}
     else:
         return {'Status' : False }
 
