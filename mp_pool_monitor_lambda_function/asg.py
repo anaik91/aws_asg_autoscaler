@@ -38,7 +38,7 @@ def scale_asg_vms(AutoScalingGroupName,MaxSize,MinSize,DesiredCapacity):
 
 
 
-def create_cloudwatch_metric_alarm(AlarmName,MetricName,Namespace,Threshold,ComparisonOperator,AlarmActions):
+def create_cloudwatch_metric_alarm(AlarmName,MetricName,Namespace,Threshold,ComparisonOperator,AlarmActions,AutoScalingGroupName):
     try:
         client = boto3.client('cloudwatch')
         response = client.put_metric_alarm(
@@ -51,7 +51,13 @@ def create_cloudwatch_metric_alarm(AlarmName,MetricName,Namespace,Threshold,Comp
             EvaluationPeriods=2,
             Threshold=Threshold,
             ComparisonOperator=ComparisonOperator,
-            AlarmActions=[AlarmActions]
+            AlarmActions=[AlarmActions],
+            Dimensions=[
+                {
+                    'Name': 'AutoScalingGroupName',
+                    'Value': AutoScalingGroupName
+                }
+            ]
         )          
     except ClientError as e:
         print("Unexpected error: {}".format(e))
@@ -152,10 +158,10 @@ def create_e2e_asg(asg_uuid_map,Project):
     mp_low_cpu_policy = create_asg_scaling_policy(asg_name_prefix,asg_name_prefix+'cpu-low-mp','low')
     mp_low_mem_policy = create_asg_scaling_policy(asg_name_prefix,asg_name_prefix+'memory-low-mp','low')
     print('Creating Cloud Watch Metrics for Autoscaling Group... ')
-    create_cloudwatch_metric_alarm(asg_name_prefix+'-cpu-high','CPUUtilization','AWS/EC2',80,'GreaterThanOrEqualToThreshold',mp_high_cpu_policy['PolicyARN'])
-    create_cloudwatch_metric_alarm(asg_name_prefix+'-memory-high','mem_used_percent','CWAgent',80,'GreaterThanOrEqualToThreshold',mp_high_mem_policy['PolicyARN'])
-    create_cloudwatch_metric_alarm(asg_name_prefix+'-cpu-low','CPUUtilization','AWS/EC2',10,'GreaterThanOrEqualToThreshold',mp_low_cpu_policy['PolicyARN'])
-    create_cloudwatch_metric_alarm(asg_name_prefix+'-memory-low','mem_used_percent','CWAgent',10,'GreaterThanOrEqualToThreshold',mp_low_mem_policy['PolicyARN'])
+    create_cloudwatch_metric_alarm(asg_name_prefix+'-cpu-high','CPUUtilization','AWS/EC2',80,'GreaterThanOrEqualToThreshold',mp_high_cpu_policy['PolicyARN'],asg_name_prefix)
+    create_cloudwatch_metric_alarm(asg_name_prefix+'-memory-high','mem_used_percent','CWAgent',80,'GreaterThanOrEqualToThreshold',mp_high_mem_policy['PolicyARN'],asg_name_prefix)
+    create_cloudwatch_metric_alarm(asg_name_prefix+'-cpu-low','CPUUtilization','AWS/EC2',10,'GreaterThanOrEqualToThreshold',mp_low_cpu_policy['PolicyARN'],asg_name_prefix)
+    create_cloudwatch_metric_alarm(asg_name_prefix+'-memory-low','mem_used_percent','CWAgent',10,'GreaterThanOrEqualToThreshold',mp_low_mem_policy['PolicyARN'],asg_name_prefix)
     print('Creating Lifecycle hook for Autoscaling Group... ')
     create_asg_lifecycle_hook(asg_name_prefix+'-launch-hook',asg_name_prefix,'autoscaling:EC2_INSTANCE_LAUNCHING',existing_asg_lc_hook_details['LifecycleHooks'][0]['RoleARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationTargetARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationMetadata'])
     create_asg_lifecycle_hook(asg_name_prefix+'-terminate-hook',asg_name_prefix,'autoscaling:EC2_INSTANCE_TERMINATING',existing_asg_lc_hook_details['LifecycleHooks'][0]['RoleARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationTargetARN'],existing_asg_lc_hook_details['LifecycleHooks'][0]['NotificationMetadata'])
