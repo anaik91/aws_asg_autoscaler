@@ -1,6 +1,7 @@
 import json,sys
 import boto3
 from botocore.exceptions import ClientError
+from botocore.exceptions import NoCredentialsError
 from botocore.response import StreamingBody
 import yaml
 import base64
@@ -30,6 +31,22 @@ def filter_tags(tags,Key):
         if tag['Key'] == Key:
             return tag['Value']
     return None
+
+def validate_aws_access():
+    try:
+        client = boto3.client('sts')
+        response = client.get_caller_identity()
+    except ClientError as e:
+        print("Unexpected error: {}".format(e))
+        return False
+    except NoCredentialsError as e:
+        print("ERROR: Credentials Not found.\n\nHint: Export the AWS Credentials OR Configure AWS CLI".format(e))
+        return False
+    if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+        return True
+    else:
+        return False
+
 
 def update_secrets_value(SecretId,SecretString):
     try:

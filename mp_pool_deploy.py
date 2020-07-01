@@ -67,6 +67,7 @@ def update_existing_iam_policy(AutoScalingGroupName,RoleName):
 
 def update_existing_lambda(python_bin,functionName,functionDir):
     functionZip = 'gen/asgfunction.zip'
+    delete_dir('gen')
     create_dir('gen')
     functionTargetDir = 'gen/{}'.format(functionName)
     copy_dir(functionDir,functionTargetDir)
@@ -92,6 +93,7 @@ def update_existing_lambda(python_bin,functionName,functionDir):
 
 def create_mp_pool_monitor_lambda(python_bin,referenceFunction,functionName,functionDir,Project,ProxyCountThreshold):
     functionZip = 'gen/poolmonitorfunction.zip'
+    delete_dir('gen')
     create_dir('gen')
     functionTargetDir = 'gen/{}'.format(functionName)
     copy_dir(functionDir,functionTargetDir)
@@ -177,6 +179,12 @@ def main():
     ############### Populating Inputs ###############
 
     banner('START of MESSAGE PROCESSOR POOL SCALING')
+    print('Validating AWS Access...')
+    if validate_aws_access():
+        print('Validation Successfull')
+    else:
+        banner('END of MESSAGE PROCESSOR POOL SCALING')
+        sys.exit(1)
     print('Scanning for Resoureces in AWS related to the Project ==> {}\n'.format(Project))
     
     ############### Checking Resource availability ###############
