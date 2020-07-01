@@ -40,7 +40,7 @@ def validate_aws_access():
         print("Unexpected error: {}".format(e))
         return False
     except NoCredentialsError as e:
-        print("ERROR: Credentials Not found.\n\nHint: Export the AWS Credentials OR Configure AWS CLI".format(e))
+        print("ERROR: Credentials Not found.\n\nHint: Export the AWS Credentials OR Configure AWS CLI\n".format(e))
         return False
     if response['ResponseMetadata']['HTTPStatusCode'] == 200:
         return True
